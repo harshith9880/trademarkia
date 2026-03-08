@@ -20,8 +20,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-test_env/
-test_env2/
 
 # IDEs
 .idea/
@@ -42,4 +40,3 @@ frontend/.env
 dataset/
 test_env/
 test_env2/
-app/__pycache__/

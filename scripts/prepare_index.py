@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.mixture import GaussianMixture
-from fastembed import TextEmbedding
+from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 
@@ -47,15 +47,14 @@ def basic_cleanup(text: str) -> str:
 
 def embed_corpus(texts):
     model_name = "sentence-transformers/all-MiniLM-L6-v2"
-    model = TextEmbedding(model_name)
-    
-    embeddings = []
-    print("Generating embeddings via fastembed...")
-    # fastembed yields embeddings iteratively
-    for emb in model.embed(texts, batch_size=64):
-        embeddings.append(emb)
-    
-    embeddings = np.array(embeddings).astype("float32")
+    model = SentenceTransformer(model_name)
+    embeddings = model.encode(
+        texts,
+        batch_size=64,
+        show_progress_bar=True,
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+    ).astype("float32")
     return embeddings, model_name
 
 
