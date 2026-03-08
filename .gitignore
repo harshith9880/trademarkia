@@ -42,3 +42,4 @@ frontend/.env
 dataset/
 test_env/
 test_env2/
+app/__pycache__/
