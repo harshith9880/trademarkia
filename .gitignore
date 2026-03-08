@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+*.log
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments
+.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.idea/
+.vscode/
+
+# Vercel
+.vercel/
+
+# Artifacts
+# DO NOT ignore the 'artifacts/' directory for Vercel deployment!
+# Vercel serverless functions (app/main.py) need these precomputed files at runtime.
+# artifacts/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
