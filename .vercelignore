@@ -10,3 +10,5 @@ frontend/dist
 .idea
 __pycache__
 *.pyc
+test_env
+test_env2

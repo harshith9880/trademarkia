@@ -20,6 +20,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+test_env/
+test_env2/
 
 # IDEs
 .idea/
