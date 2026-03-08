@@ -1,0 +1,12 @@
+.venv
+venv
+env
+dataset
+scripts
+frontend/node_modules
+frontend/dist
+.git
+.vscode
+.idea
+__pycache__
+*.pyc
