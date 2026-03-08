@@ -12,8 +12,19 @@ from pydantic import BaseModel
 import tempfile
 import os
 from fastembed import TextEmbedding
-from sklearn.mixture import GaussianMixture
 from starlette.responses import FileResponse
+
+def gmm_predict_proba(q_vec: np.ndarray, weights: np.ndarray, means: np.ndarray, covariances: np.ndarray) -> np.ndarray:
+    n_components = means.shape[0]
+    log_prob = np.zeros(n_components, dtype=np.float32)
+    for k in range(n_components):
+        diff = q_vec - means[k]
+        log_prob[k] = -0.5 * np.sum(np.log(2 * np.pi * covariances[k]) + (diff ** 2) / covariances[k])
+    
+    log_prob += np.log(weights)
+    max_log_prob = np.max(log_prob)
+    exp_log_prob = np.exp(log_prob - max_log_prob)
+    return (exp_log_prob / np.sum(exp_log_prob)).astype("float32")
 
 from .cache import SemanticCache
 from .vector_index import DenseVectorIndex
@@ -58,12 +69,12 @@ def load_artifacts():
     config_path = ARTIFACT_DIR / "config.json"
     texts_path = ARTIFACT_DIR / "doc_texts.jsonl"
     embeddings_path = ARTIFACT_DIR / "doc_embeddings.npy"
-    gmm_path = ARTIFACT_DIR / "gmm.pkl"
+    gmm_params_path = ARTIFACT_DIR / "gmm_params.npz"
     cluster_probs_path = ARTIFACT_DIR / "doc_cluster_probs.npy"
 
     if not all(
         p.exists()
-        for p in [config_path, texts_path, embeddings_path, gmm_path, cluster_probs_path]
+        for p in [config_path, texts_path, embeddings_path, gmm_params_path, cluster_probs_path]
     ):
         raise RuntimeError(
             "Artifacts are missing. Run scripts/prepare_index.py first."
@@ -80,8 +91,10 @@ def load_artifacts():
     embeddings = np.load(embeddings_path)
     cluster_probs = np.load(cluster_probs_path)
 
-    with gmm_path.open("rb") as f:
-        gmm: GaussianMixture = pickle.load(f)
+    gmm_params = np.load(gmm_params_path)
+    gmm_weights = gmm_params["weights"]
+    gmm_means = gmm_params["means"]
+    gmm_covariances = gmm_params["covariances"]
 
     # Use /tmp for Vercel compatibility
     cache_dir = os.path.join(tempfile.gettempdir(), "fastembed_cache")
@@ -96,7 +109,9 @@ def load_artifacts():
         "docs": docs,
         "embeddings": embeddings,
         "cluster_probs": cluster_probs,
-        "gmm": gmm,
+        "gmm_weights": gmm_weights,
+        "gmm_means": gmm_means,
+        "gmm_covariances": gmm_covariances,
         "embedder": embedder,
         "index": index,
     }
@@ -135,12 +150,14 @@ def startup_event():
     app.state.docs = artifacts["docs"]
     app.state.embeddings = artifacts["embeddings"]
     app.state.cluster_probs = artifacts["cluster_probs"]
-    app.state.gmm = artifacts["gmm"]
+    app.state.gmm_weights = artifacts["gmm_weights"]
+    app.state.gmm_means = artifacts["gmm_means"]
+    app.state.gmm_covariances = artifacts["gmm_covariances"]
     app.state.embedder = artifacts["embedder"]
     app.state.index = artifacts["index"]
 
     embedding_dim = app.state.embeddings.shape[1]
-    num_clusters = app.state.gmm.n_components
+    num_clusters = app.state.gmm_means.shape[0]
 
     similarity_threshold = float(app.state.config.get("similarity_threshold", 0.85))
 
@@ -165,7 +182,9 @@ def query_endpoint(payload: QueryRequest):
         raise HTTPException(status_code=400, detail="Query must be non-empty.")
 
     embedder: TextEmbedding = app.state.embedder
-    gmm: GaussianMixture = app.state.gmm
+    gmm_weights: np.ndarray = app.state.gmm_weights
+    gmm_means: np.ndarray = app.state.gmm_means
+    gmm_covariances: np.ndarray = app.state.gmm_covariances
     index: DenseVectorIndex = app.state.index
     docs: List[Dict[str, Any]] = app.state.docs
     cache: SemanticCache = app.state.cache
@@ -173,7 +192,7 @@ def query_endpoint(payload: QueryRequest):
     # fastembed returns a generator of numpy arrays that are already normalized
     q_vec = next(embedder.embed([q])).astype("float32")
 
-    cluster_dist = gmm.predict_proba(q_vec.reshape(1, -1))[0].astype("float32")
+    cluster_dist = gmm_predict_proba(q_vec, gmm_weights, gmm_means, gmm_covariances)
 
     cache_hit, entry, sim, dominant_cluster = cache.lookup(q_vec, cluster_dist)
 
