@@ -9,7 +9,9 @@ import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
+import tempfile
+import os
+from fastembed import TextEmbedding
 from sklearn.mixture import GaussianMixture
 from starlette.responses import FileResponse
 
@@ -81,7 +83,9 @@ def load_artifacts():
     with gmm_path.open("rb") as f:
         gmm: GaussianMixture = pickle.load(f)
 
-    embedder = SentenceTransformer(config["embedding_model"])
+    # Use /tmp for Vercel compatibility
+    cache_dir = os.path.join(tempfile.gettempdir(), "fastembed_cache")
+    embedder = TextEmbedding(config["embedding_model"], cache_dir=cache_dir)
     index = DenseVectorIndex(embeddings)
 
     if embeddings.shape[1] != config["embedding_dim"]:
@@ -160,17 +164,14 @@ def query_endpoint(payload: QueryRequest):
     if not q:
         raise HTTPException(status_code=400, detail="Query must be non-empty.")
 
-    embedder: SentenceTransformer = app.state.embedder
+    embedder: TextEmbedding = app.state.embedder
     gmm: GaussianMixture = app.state.gmm
     index: DenseVectorIndex = app.state.index
     docs: List[Dict[str, Any]] = app.state.docs
     cache: SemanticCache = app.state.cache
 
-    q_vec = embedder.encode(
-        [q],
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-    )[0].astype("float32")
+    # fastembed returns a generator of numpy arrays that are already normalized
+    q_vec = next(embedder.embed([q])).astype("float32")
 
     cluster_dist = gmm.predict_proba(q_vec.reshape(1, -1))[0].astype("float32")
 
